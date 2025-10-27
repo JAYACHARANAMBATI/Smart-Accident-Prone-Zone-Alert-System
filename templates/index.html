@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Route Navigator - Live Safety Alerts</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --secondary-color: #1e40af;
+      --danger-color: #dc2626;
+      --success-color: #16a34a;
+      --background-color: #f1f5f9;
+      --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Poppins', sans-serif;
+      background: var(--background-color);
+      color: #1e293b;
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      padding: 1rem 2rem;
+      box-shadow: var(--card-shadow);
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .header p {
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      height: calc(100vh - 100px);
+      gap: 1rem;
+      padding: 1rem;
+    }
+
+    #controls {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .input-group label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #475569;
+    }
+
+    #destination {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+
+    #destination:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .search-btn {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .search-btn:hover {
+      background: var(--secondary-color);
+      transform: translateY(-1px);
+    }
+
+    .search-btn:active {
+      transform: translateY(0);
+    }
+
+    #map {
+      height: 100%;
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+    }
+
+    .status-card {
+      background: white;
+      padding: 1rem;
+      border-radius: 8px;
+      border-left: 4px solid var(--primary-color);
+      margin-top: 1rem;
+    }
+
+    .status-card.warning {
+      border-left-color: #eab308;
+    }
+
+    .status-card.danger {
+      border-left-color: var(--danger-color);
+    }
+
+    #status {
+      font-size: 0.9rem;
+      color: #475569;
+      margin-top: 0.5rem;
+    }
+
+    .legend {
+      margin-top: auto;
+      padding-top: 1rem;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+
+    .legend-dot.accident { background: #dc2626; }
+    .legend-dot.caution { background: #eab308; }
+    .legend-dot.route { background: #2563eb; }
+
+    @media (max-width: 768px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+      
+      #controls {
+        height: auto;
+      }
+      
+      #map {
+        height: 60vh;
+      }
+    }
+
+    /* Loading Animation */
+    .loading {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--primary-color);
+    }
+
+    .loading.active {
+      display: flex;
+    }
+
+    .loading-spinner {
+      width: 20px;
+      height: 20px;
+      border: 3px solid #e2e8f0;
+      border-top-color: var(--primary-color);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1><i class="fas fa-map-marked-alt"></i> Smart Route Navigator</h1>
+    <p>Real-time navigation with safety alerts and danger zone warnings</p>
+  </header>
+
+  <div class="container">
+    <div id="controls">
+      <div class="input-group">
+        <label for="destination"><i class="fas fa-location-dot"></i> Where do you want to go?</label>
+        <input 
+          type="text" 
+          id="destination" 
+          placeholder="Enter your destination..."
+          autocomplete="off"
+        />
+      </div>
+      
+      <button class="search-btn" onclick="getRoute()">
+        <i class="fas fa-route"></i>
+        Show Safe Route
+      </button>
+
+      <div class="loading">
+        <div class="loading-spinner"></div>
+        <span>Finding the safest route...</span>
+      </div>
+
+      <div id="status"></div>
+
+      <div class="legend">
+        <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #475569;">
+          <i class="fas fa-circle-info"></i> Map Legend
+        </h3>
+        <div class="legend-item">
+          <span class="legend-dot accident"></span>
+          <span>Accident Prone Zone</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot caution"></span>
+          <span>Caution Area</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot route"></span>
+          <span>Your Route</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="/static/script.js"></script>
+</body>
+</html>
