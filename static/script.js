@@ -1,7 +1,8 @@
-let map, routeLayer, userMarker;
+let map, routeLayer, altRouteLayer, userMarker;
 let dangerMarkers = [];
 let currentPosition = null;
 let updateCount = 0;
+let lastRoutes = null;
 
 
 map = L.map('map').setView([9.5745, 77.6752], 14);
@@ -11,9 +12,13 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 
 function speak(msg) {
+  const rateEl = document.getElementById('voiceRate');
+  const toggleEl = document.getElementById('voiceToggle');
   const utter = new SpeechSynthesisUtterance(msg);
-  utter.rate = 1;
-  speechSynthesis.speak(utter);
+  utter.rate = rateEl ? parseFloat(rateEl.value) : 1;
+  if (!toggleEl || toggleEl.dataset.enabled !== 'false') {
+    speechSynthesis.speak(utter);
+  }
 }
 
 
@@ -34,6 +39,18 @@ function trackLocation() {
 }
 setInterval(trackLocation, 5000); 
 trackLocation();
+
+// Voice toggle button logic
+const voiceToggleBtn = document.getElementById('voiceToggle');
+if (voiceToggleBtn) {
+  voiceToggleBtn.dataset.enabled = 'true';
+  voiceToggleBtn.addEventListener('click', () => {
+    const enabled = voiceToggleBtn.dataset.enabled === 'true';
+    voiceToggleBtn.dataset.enabled = enabled ? 'false' : 'true';
+    voiceToggleBtn.style.background = enabled ? '#ef4444' : '#22c55e';
+    voiceToggleBtn.innerHTML = enabled ? '<i class="fas fa-volume-mute"></i> Voice Off' : '<i class="fas fa-volume-up"></i> Voice On';
+  });
+}
 
 
 async function getRoute() {
@@ -68,13 +85,51 @@ async function getRoute() {
     showStatus(data.error || "Route not found. Please try again.", "danger");
     return;
   }
-
-  showStatus("Route found! Follow the blue line and watch for danger zones.", "success");
-
   
+  const routes = data.routes || [];
+  if (routes.length === 0) {
+    showStatus("No routes returned. Try another destination.", "danger");
+    return;
+  }
+  lastRoutes = routes;
+
+  // Draw best route in blue and alternative in gray
   if (routeLayer) map.removeLayer(routeLayer);
-  routeLayer = L.polyline(data.route_coords, { color: 'blue' }).addTo(map);
-  map.fitBounds(routeLayer.getBounds());
+  if (altRouteLayer) map.removeLayer(altRouteLayer);
+
+  routeLayer = L.polyline(routes[0].coords, { color: 'blue', weight: 5 }).addTo(map);
+  if (routes[1]) {
+    altRouteLayer = L.polyline(routes[1].coords, { color: '#808080', weight: 4, dashArray: '6,6' }).addTo(map);
+  }
+  const bounds = L.latLngBounds(routes.flatMap(r => r.coords.map(c => L.latLng(c[0], c[1]))));
+  map.fitBounds(bounds);
+
+  showStatus("Two routes available. Pick one below.", "success");
+
+  // Populate selection UI
+  const list = document.getElementById('routes-list');
+  const options = document.getElementById('route-options');
+  options.style.display = 'block';
+  list.innerHTML = '';
+  routes.slice(0, 2).forEach((r, idx) => {
+    const mins = r.duration ? Math.round(r.duration / 60) : '-';
+    const km = r.distance ? (r.distance / 1000).toFixed(1) : '-';
+    const btn = document.createElement('button');
+    btn.className = 'search-btn';
+    btn.style.background = idx === 0 ? '#2563eb' : '#64748b';
+    btn.innerHTML = `${idx === 0 ? 'Recommended' : 'Alternative'} · ${km} km · ${mins} min · Risk ${r.risk_score}`;
+    btn.onclick = () => selectRoute(idx, routes);
+    list.appendChild(btn);
+  });
+
+  // Auto pick safest if enabled
+  const auto = document.getElementById('autoSafest');
+  if (auto && auto.checked) {
+    selectRoute(0, routes); // routes already sorted safest first
+  } else {
+    // default draw already done; show summary for recommended
+    updateRouteSummary(0);
+  }
 
   
   dangerMarkers.forEach(m => map.removeLayer(m));
@@ -86,7 +141,7 @@ async function getRoute() {
     return { marker, zone };
   });
 
-  speak("Route loaded. Drive safely!");
+  speak("Routes loaded. Pick your preferred route.");
 }
 
 
@@ -126,4 +181,40 @@ function getDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
     Math.sin(dLon/2) ** 2;
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+// Allow user to select which route to follow
+function selectRoute(index, routes) {
+  if (!routes || !routes[index]) return;
+  if (routeLayer) map.removeLayer(routeLayer);
+  if (altRouteLayer) map.removeLayer(altRouteLayer);
+
+  // Selected route in blue; show the other as dashed gray
+  routeLayer = L.polyline(routes[index].coords, { color: 'blue', weight: 5 }).addTo(map);
+  const otherIndex = index === 0 ? 1 : 0;
+  if (routes[otherIndex]) {
+    altRouteLayer = L.polyline(routes[otherIndex].coords, { color: '#808080', weight: 4, dashArray: '6,6' }).addTo(map);
+  }
+  const bounds = L.latLngBounds(routes[index].coords.map(c => L.latLng(c[0], c[1])));
+  map.fitBounds(bounds);
+  speak(`Route selected. Risk score ${routes[index].risk_score}. Drive safely!`);
+  updateRouteSummary(index);
+}
+
+function updateRouteSummary(index) {
+  if (!lastRoutes || !lastRoutes[index]) return;
+  const r = lastRoutes[index];
+  const mins = r.duration ? Math.round(r.duration / 60) : '-';
+  const km = r.distance ? (r.distance / 1000).toFixed(1) : '-';
+  const box = document.getElementById('route-summary');
+  if (!box) return;
+  box.style.display = 'block';
+  const stepsList = (r.steps || []).slice(0, 8).map(s => `• ${s.instruction || 'Proceed'} on ${s.name || ''} (${Math.round((s.distance||0)/10)/100} km)`).join('<br/>');
+  box.innerHTML = `
+    <strong>Selected Route:</strong> ${km} km · ${mins} min · Risk ${r.risk_score}<br/>
+    <div style="margin-top:0.5rem; color:#475569;">
+      <strong>Steps:</strong><br/>
+      ${stepsList || 'No step data available.'}
+    </div>
+  `;
 }

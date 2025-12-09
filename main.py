@@ -30,15 +30,36 @@ def get_route():
 
     
     osrm_url = f"http://router.project-osrm.org/route/v1/driving/{origin_lon},{origin_lat};{dest_lon},{dest_lat}"
-    osrm_params = {"overview": "full", "geometries": "geojson"}
+    # Ask OSRM for alternative routes
+    osrm_params = {"overview": "full", "geometries": "geojson", "alternatives": "true", "steps": "true"}
     osrm_resp = requests.get(osrm_url, params=osrm_params)
     osrm_json = osrm_resp.json()
 
     if 'routes' not in osrm_json or not osrm_json['routes']:
         return jsonify({"error": "No route found."}), 404
 
-    coords = osrm_json['routes'][0]['geometry']['coordinates']
-    route_coords = [[c[1], c[0]] for c in coords]
+    # Build up to two alternatives (if available)
+    routes = []
+    for r in osrm_json['routes'][:2]:
+        coords = r['geometry']['coordinates']
+        route_coords = [[c[1], c[0]] for c in coords]
+        # Extract basic turn-by-turn steps from first leg
+        steps = []
+        legs = r.get('legs') or []
+        if legs:
+            for s in legs[0].get('steps', []):
+                steps.append({
+                    "distance": s.get('distance'),
+                    "duration": s.get('duration'),
+                    "name": s.get('name'),
+                    "instruction": s.get('maneuver', {}).get('instruction') or s.get('maneuver', {}).get('type')
+                })
+        routes.append({
+            "distance": r.get('distance'),
+            "duration": r.get('duration'),
+            "coords": route_coords,
+            "steps": steps
+        })
 
     
     danger_zones = [
@@ -56,11 +77,31 @@ def get_route():
         {"name": "Crime Zone 6", "lat": 9.587709, "lon": 77.682834, "type": "Crime"},
     ]
 
+    # Simple risk scoring: count points near danger zones within 300m
+    def point_distance_km(lat1, lon1, lat2, lon2):
+        from math import sin, cos, atan2, sqrt, pi
+        R = 6371
+        dLat = (lat2 - lat1) * pi / 180
+        dLon = (lon2 - lon1) * pi / 180
+        a = sin(dLat/2) ** 2 + cos(lat1*pi/180) * cos(lat2*pi/180) * sin(dLon/2) ** 2
+        return R * (2 * atan2(sqrt(a), sqrt(1 - a)))
+
+    for r in routes:
+        risk = 0
+        for lat, lon in r['coords'][::25]:  # sample every ~25 points to reduce computation
+            for zone in danger_zones:
+                if point_distance_km(lat, lon, zone['lat'], zone['lon']) <= 0.3:
+                    risk += 2 if zone['type'] == 'Accident' else 1
+        r['risk_score'] = risk
+
+    # Determine best (lowest risk) and alternative
+    sorted_routes = sorted(routes, key=lambda x: (x['risk_score'], x['duration'] or 0, x['distance'] or 0))
+
     return jsonify({
         "success": True,
         "dest_lat": dest_lat,
         "dest_lon": dest_lon,
-        "route_coords": route_coords,
+        "routes": sorted_routes,
         "danger_zones": danger_zones
     })
 

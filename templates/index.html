@@ -14,7 +14,23 @@
       --danger-color: #dc2626;
       --success-color: #16a34a;
       --background-color: #f1f5f9;
+      --surface-color: #ffffff;
+      --text-color: #1e293b;
+      --muted-color: #475569;
       --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
+
+    /* Dark theme */
+    .theme-dark {
+      --primary-color: #3b82f6;
+      --secondary-color: #1d4ed8;
+      --danger-color: #ef4444;
+      --success-color: #22c55e;
+      --background-color: #0f172a;
+      --surface-color: #0b1222;
+      --text-color: #e5e7eb;
+      --muted-color: #cbd5e1;
+      --card-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
     }
 
     * {
@@ -27,7 +43,7 @@
       margin: 0;
       font-family: 'Poppins', sans-serif;
       background: var(--background-color);
-      color: #1e293b;
+      color: var(--text-color);
     }
 
     .header {
@@ -50,14 +66,14 @@
 
     .container {
       display: grid;
-      grid-template-columns: 350px 1fr;
+      grid-template-columns: 380px 1fr;
       height: calc(100vh - 100px);
       gap: 1rem;
       padding: 1rem;
     }
 
     #controls {
-      background: white;
+      background: var(--surface-color);
       padding: 1.5rem;
       border-radius: 12px;
       box-shadow: var(--card-shadow);
@@ -74,17 +90,19 @@
 
     .input-group label {
       font-size: 0.9rem;
-      font-weight: 500;
-      color: #475569;
+      font-weight: 600;
+      color: var(--muted-color);
     }
 
     #destination {
       width: 100%;
       padding: 0.75rem 1rem;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #33415520;
       border-radius: 8px;
       font-size: 1rem;
       transition: all 0.2s;
+      background: transparent;
+      color: var(--text-color);
     }
 
     #destination:focus {
@@ -107,6 +125,7 @@
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
+      box-shadow: var(--card-shadow);
     }
 
     .search-btn:hover {
@@ -126,11 +145,12 @@
     }
 
     .status-card {
-      background: white;
+      background: var(--surface-color);
       padding: 1rem;
       border-radius: 8px;
       border-left: 4px solid var(--primary-color);
       margin-top: 1rem;
+      box-shadow: var(--card-shadow);
     }
 
     .status-card.warning {
@@ -143,14 +163,14 @@
 
     #status {
       font-size: 0.9rem;
-      color: #475569;
+      color: var(--muted-color);
       margin-top: 0.5rem;
     }
 
     .legend {
       margin-top: auto;
       padding-top: 1rem;
-      border-top: 1px solid #e2e8f0;
+      border-top: 1px solid #33415520;
     }
 
     .legend-item {
@@ -211,10 +231,19 @@
     }
   </style>
 </head>
-<body>
+<body class="theme-dark">
   <header class="header">
-    <h1><i class="fas fa-map-marked-alt"></i> Smart Route Navigator</h1>
-    <p>Real-time navigation with safety alerts and danger zone warnings</p>
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div>
+        <h1><i class="fas fa-map-marked-alt"></i> Smart Route Navigator</h1>
+        <p>Real-time navigation with safety alerts and danger zone warnings</p>
+      </div>
+      <div>
+        <button id="themeToggle" class="search-btn" style="background:#0ea5e9">
+          <i class="fas fa-moon"></i> Theme
+        </button>
+      </div>
+    </div>
   </header>
 
   <div class="container">
@@ -231,7 +260,7 @@
       
       <button class="search-btn" onclick="getRoute()">
         <i class="fas fa-route"></i>
-        Show Safe Route
+        Show Routes
       </button>
 
       <div class="loading">
@@ -240,6 +269,26 @@
       </div>
 
       <div id="status"></div>
+
+      <div id="route-options" style="display:none; margin-top:0.75rem;">
+        <h3 style="margin-bottom: 0.5rem; font-size: 0.95rem; color: #475569;">
+          <i class="fas fa-road"></i> Choose a route
+        </h3>
+        <div id="routes-list" style="display:flex; flex-direction:column; gap:0.5rem;"></div>
+        <label style="margin-top:0.5rem; display:flex; align-items:center; gap:0.5rem; font-size:0.9rem; color:var(--muted-color);">
+          <input type="checkbox" id="autoSafest" /> Auto-select safest route
+        </label>
+        <div id="route-summary" class="status-card" style="display:none;"></div>
+
+        <div class="status-card" style="margin-top:0.5rem;">
+          <h3 style="margin-bottom:0.5rem; font-size:0.95rem; color:var(--muted-color)"><i class="fas fa-volume-up"></i> Voice Alerts</h3>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <label style="color:var(--muted-color);">Rate</label>
+            <input type="range" min="0.5" max="1.5" step="0.1" value="1" id="voiceRate" style="flex:1" />
+            <button id="voiceToggle" class="search-btn" style="background:#22c55e"><i class="fas fa-slash"></i> Toggle</button>
+          </div>
+        </div>
+      </div>
 
       <div class="legend">
         <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: #475569;">
@@ -265,5 +314,12 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="/static/script.js"></script>
+  <script>
+    const themeBtn = document.getElementById('themeToggle');
+    themeBtn.addEventListener('click', () => {
+      document.body.classList.toggle('theme-dark');
+      themeBtn.innerHTML = document.body.classList.contains('theme-dark') ? '<i class="fas fa-moon"></i> Theme' : '<i class="fas fa-sun"></i> Theme';
+    });
+  </script>
 </body>
 </html>
